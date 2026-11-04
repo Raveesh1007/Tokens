@@ -7,3 +7,4 @@ contracts/cache/
 contracts/broadcast/*/31337/
 contracts/lib/
 contracts/deployments/31337.json
+contracts/broadcast/

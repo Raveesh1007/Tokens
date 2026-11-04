@@ -26,7 +26,7 @@ verify() {
 usdc=$(get usdc) nvda=$(get nvda) oracle=$(get oracle) irm=$(get irm) lltv=$(get lltv)
 
 verify "$usdc" src/Token.sol:Token \
-  "$(cast abi-encode "constructor(string,string,uint8,bool)" "Mock USDC (test)" mUSDC 6 false)"
+  "$(cast abi-encode "constructor(string,string,uint8,bool)" "Mock USDC (test)" mUSDC 6 true)"
 verify "$nvda" src/Token.sol:Token \
   "$(cast abi-encode "constructor(string,string,uint8,bool)" "Mock NVIDIA (test)" mNVDA 18 true)"
 verify "$oracle" src/MockMorphoOracle.sol:MockMorphoOracle \

@@ -43,7 +43,7 @@ contract DeployMorpho is Script {
     {
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
-        Token usdc = new Token("Mock USDC (test)", "mUSDC", 6, false);
+        Token usdc = new Token("Mock USDC (test)", "mUSDC", 6, true);
         Token nvda = new Token("Mock NVIDIA (test)", "mNVDA", 18, true);
         MockMorphoOracle oracle = new MockMorphoOracle(200e6);
         d.params = MarketParams(address(usdc), address(nvda), address(oracle), IRM, lltv);

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isAddress, maxUint256, parseEther, parseUnits, stringToHex, type Address, type Hex } from "viem";
+import { isAddress, maxUint256, parseAbi, parseEther, parseUnits, stringToHex, type Address, type Hex } from "viem";
 import { abiOf, chainAt, check, checks, eq, fail, need, root, type Contract } from "./lib";
 
 type Dep = {
@@ -27,6 +27,26 @@ const usdc = c.token(dep.usdc);
 const nvda = c.token(dep.nvda);
 const mUSDC = (n: number) => parseUnits(String(n), 6);
 const step = (s: string) => console.log(`\n${s}`);
+
+const REAL_IDENTITY: Address = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
+const REAL_REPUTATION: Address = "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63";
+const realIdentity: Contract = {
+  address: REAL_IDENTITY,
+  abi: parseAbi([
+    "function register(string agentURI) returns (uint256 agentId)",
+    "function ownerOf(uint256 agentId) view returns (address)",
+    "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+  ]),
+};
+const realReputation: Contract = {
+  address: REAL_REPUTATION,
+  abi: parseAbi([
+    "function getLastIndex(uint256 agentId, address client) view returns (uint64)",
+    "function getClients(uint256 agentId) view returns (address[])",
+    "function readFeedback(uint256 agentId, address client, uint64 index) view returns (int128 value, uint8 valueDecimals, string tag1, string tag2, bool isRevoked)",
+  ]),
+};
+const registerAgent = process.env.REGISTER_AGENT === "1";
 
 const merchant = need("MERCHANT_ADDRESS");
 if (!isAddress(merchant)) fail("MERCHANT_ADDRESS is not an address");
@@ -65,7 +85,22 @@ await c.approve(borrower, usdc, dep.router);
 await borrower.send("morpho authorize router", morpho, "setAuthorization", [dep.router, true]);
 eq(await read(morpho, "isAuthorized", [borrower.address, dep.router]), true, "router is authorized on Morpho");
 
-const agentEnv = process.env.AGENT_ID;
+let realAgentId = 0n;
+if (registerAgent) {
+  step("register a real ERC-8004 agent");
+  const used = [await read<Address>(router, "identity"), await read<Address>(router, "reputation")];
+  console.log(`  registries used: identity ${used[0]}, reputation ${used[1]}`);
+  eq(used, [REAL_IDENTITY, REAL_REPUTATION], "router is wired to the real ERC-8004 registries");
+  const reg = await borrower.send("register agent", realIdentity, "register", ["ipfs://standing-demo"]);
+  const minted = reg.logs(realIdentity, "Transfer").find((e) => e.to === borrower.address);
+  if (!minted) fail("register tx has no Transfer to the borrower");
+  realAgentId = minted.tokenId;
+  eq(await read(realIdentity, "ownerOf", [realAgentId]), borrower.address, `borrower owns agent ${realAgentId}`);
+  const link = await borrower.send("link agent", router, "linkAgent", [realAgentId]);
+  eq(link.logs(router, "AgentLinked")[0].agentId, realAgentId, "AgentLinked agentId");
+}
+
+const agentEnv = registerAgent ? undefined : process.env.AGENT_ID;
 let linked = false;
 if (agentEnv) {
   const agentId = BigInt(agentEnv);
@@ -114,6 +149,16 @@ eq(await terms(borrower.address), [3500n, 100n, 1n], "terms after one repay (ltv
 const updated = done.logs(router, "CreditUpdated")[0];
 eq([updated.ltvBps, updated.feeBps, updated.score], [3500n, 100n, 1n], "CreditUpdated carries the new terms");
 eq(await read(router, "loans", [borrower.address]), [0n, 0n], "loan record cleared");
+if (registerAgent) {
+  step("real reputation registry");
+  eq(done.logs(router, "MirrorFailed").length, 0, "no MirrorFailed in the repay receipt");
+  console.log(`  repay gas used ${done.receipt.gasUsed} (router caps the registry call at 300000)`);
+  eq(await read(realReputation, "getLastIndex", [realAgentId, dep.router]), 1, "registry holds one feedback from the router");
+  eq(await read(realReputation, "getClients", [realAgentId]), [dep.router], "router is the only client");
+  const fb = await read<[bigint, number, string, string, boolean]>(realReputation, "readFeedback", [realAgentId, dep.router, 1n]);
+  console.log(`  readFeedback(agent ${realAgentId}, router, 1) = value ${fb[0]}, decimals ${fb[1]}, tag1 ${fb[2]}, tag2 ${fb[3]}, revoked ${fb[4]}`);
+  eq(fb, [1n, 0, "credit", "repay", false], "feedback (value, decimals, tag1, tag2, revoked)");
+}
 if (linked) console.log(`  mirror: ${done.logs(router, "MirrorFailed").length ? "registry call failed (loan unaffected)" : "no failure reported"}`);
 
 console.log(`\nPASS ${checks()} checks on chain ${c.chainId}`);

@@ -156,7 +156,7 @@ export async function connect() {
     signer(keccak256(concat([funder.key, stringToHex(`${tag}${i}`)])));
 
   async function fund(funder: Signer, to: Address) {
-    const min = parseEther("0.2");
+    const min = parseEther(isMonad ? "1" : "0.2");
     const bal = await pub.getBalance({ address: to });
     if (bal < min) await funder.transfer("fund gas", to, min - bal);
   }

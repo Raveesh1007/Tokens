@@ -79,8 +79,7 @@ const explorers: Record<number, string> = {
   143: "https://monadscan.com/tx/",
 };
 
-export async function connect() {
-  const url = need("RPC_URL");
+export async function chainAt(url: string) {
   const chainId = await createPublicClient({ transport: http(url) }).getChainId();
   const chain = defineChain({
     id: chainId,
@@ -91,16 +90,8 @@ export async function connect() {
   const pub = createPublicClient({ chain, transport: http(url), pollingInterval: 250 });
   const isMonad = chainId in explorers;
 
-  const file = deploymentFile(chainId);
-  if (!existsSync(file)) fail(`no deployment for chain ${chainId} at ${file}, run the deploy script first`);
-  const dep: Deployment = JSON.parse(readFileSync(file, "utf8"));
-
   const tokenAbi = abiOf("Token");
-  const vault: Contract = { address: dep.vault, abi: abiOf("Vault") };
-  const usdc: Contract = { address: dep.usdc, abi: tokenAbi };
   const token = (address: Address): Contract => ({ address, abi: tokenAbi });
-  const identity: Contract = { address: dep.identity, abi: abiOf("MockIdentityRegistry") };
-  const reputation: Contract = { address: dep.reputation, abi: abiOf("MockReputationRegistry") };
 
   const read = <T>(c: Contract, functionName: string, args: unknown[] = []) =>
     pub.readContract({ address: c.address, abi: c.abi, functionName, args }) as Promise<T>;
@@ -155,39 +146,28 @@ export async function connect() {
   const derive = (funder: Signer, tag: string, i: number) =>
     signer(keccak256(concat([funder.key, stringToHex(`${tag}${i}`)])));
 
-  async function fund(funder: Signer, to: Address) {
-    const min = parseEther(isMonad ? "1" : "0.2");
+  async function fund(funder: Signer, to: Address, min = parseEther(isMonad ? "1" : "0.2")) {
     const bal = await pub.getBalance({ address: to });
     if (bal < min) await funder.transfer("fund gas", to, min - bal);
   }
 
-  async function fresh(funder: Signer, tag: string) {
+  async function fresh(funder: Signer, tag: string, min?: bigint) {
     for (let i = 0; ; i++) {
       const s = derive(funder, tag, i);
       if ((await pub.getTransactionCount({ address: s.address })) > 0) continue;
-      await fund(funder, s.address);
+      await fund(funder, s.address, min);
       return s;
     }
   }
 
-  async function approve(who: Signer, c: Contract, spender: Address = dep.vault) {
+  async function approve(who: Signer, c: Contract, spender: Address) {
     const allowance = await read<bigint>(c, "allowance", [who.address, spender]);
     if (allowance < maxUint256 / 2n) await who.send("approve", c, "approve", [spender, maxUint256]);
   }
 
-  // mint the exact collateral needed (stock faucet is open) and pay `to` in one vault call
-  async function borrow(who: Signer, stock: Address, amount: bigint, to: Address, ref: string) {
-    const collateralIn = await read<bigint>(vault, "collateralFor", [stock, amount, who.address]);
-    await who.send("mint stock", token(stock), "mint", [who.address, collateralIn]);
-    await approve(who, token(stock));
-    const tx = await who.send("pay", vault, "pay", [stock, collateralIn, amount, to, stringToHex(ref, { size: 32 })]);
-    return { tx, collateralIn, paid: tx.logs(vault, "Paid")[0] };
-  }
-
-  async function waitAge(openedAt: bigint) {
-    const target = openedAt + BigInt(dep.minLoanAge) + 1n;
-    const deadline = Date.now() + (dep.minLoanAge + 60) * 1000;
-    while ((await pub.getBlock()).timestamp < target) {
+  async function waitUntil(timestamp: bigint, withinSeconds = 90) {
+    const deadline = Date.now() + withinSeconds * 1000;
+    while ((await pub.getBlock()).timestamp < timestamp) {
       if (Date.now() > deadline) fail("chain clock did not advance, run anvil with --block-time 1");
       await sleep(300);
     }
@@ -203,10 +183,34 @@ export async function connect() {
     fail(`${label} did not revert`);
   }
 
-  return {
-    pub, chainId, dep, vault, usdc, token, identity, reputation,
-    read, events, signer, derive, fund, fresh, approve, borrow, waitAge, expectRevert,
-  };
+  return { pub, chainId, token, read, events, signer, derive, fund, fresh, approve, waitUntil, expectRevert };
 }
 
-export type Chain = Awaited<ReturnType<typeof connect>>;
+export type Chain = Awaited<ReturnType<typeof chainAt>>;
+export type Signer = ReturnType<Chain["signer"]>;
+
+export async function connect() {
+  const c = await chainAt(need("RPC_URL"));
+  const file = deploymentFile(c.chainId);
+  if (!existsSync(file)) fail(`no deployment for chain ${c.chainId} at ${file}, run the deploy script first`);
+  const dep: Deployment = JSON.parse(readFileSync(file, "utf8"));
+
+  const vault: Contract = { address: dep.vault, abi: abiOf("Vault") };
+  const usdc: Contract = { address: dep.usdc, abi: c.token(dep.usdc).abi };
+  const identity: Contract = { address: dep.identity, abi: abiOf("MockIdentityRegistry") };
+  const reputation: Contract = { address: dep.reputation, abi: abiOf("MockReputationRegistry") };
+
+  const approve = (who: Signer, token: Contract, spender: Address = dep.vault) => c.approve(who, token, spender);
+  const waitAge = (openedAt: bigint) => c.waitUntil(openedAt + BigInt(dep.minLoanAge) + 1n, dep.minLoanAge + 60);
+
+  // mint the exact collateral needed (stock faucet is open) and pay `to` in one vault call
+  async function borrow(who: Signer, stock: Address, amount: bigint, to: Address, ref: string) {
+    const collateralIn = await c.read<bigint>(vault, "collateralFor", [stock, amount, who.address]);
+    await who.send("mint stock", c.token(stock), "mint", [who.address, collateralIn]);
+    await approve(who, c.token(stock));
+    const tx = await who.send("pay", vault, "pay", [stock, collateralIn, amount, to, stringToHex(ref, { size: 32 })]);
+    return { tx, collateralIn, paid: tx.logs(vault, "Paid")[0] };
+  }
+
+  return { ...c, approve, dep, vault, usdc, identity, reputation, borrow, waitAge };
+}

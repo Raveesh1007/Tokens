@@ -1,0 +1,19 @@
+{
+  "name": "standing-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "tsx e2e.ts",
+    "seed": "tsx seed.ts",
+    "export": "tsx export.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "viem": "^2.57.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

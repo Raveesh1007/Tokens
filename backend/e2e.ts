@@ -113,31 +113,33 @@ check(!(await read<boolean>(vault, "liquidatable", [borrower.address, dep.mTSLA]
 await expectRevert("liquidating a healthy position", vault, "liquidate", [borrower.address, dep.mTSLA], liquidator.address, "healthy");
 
 const crashed = (price * 6n) / 10n;
-await deployer.send("crash mTSLA price", vault, "setPrice", [dep.mTSLA, crashed]);
-check(await read<boolean>(vault, "liquidatable", [borrower.address, dep.mTSLA]), "liquidatable after the crash");
+try {
+  await deployer.send("crash mTSLA price", vault, "setPrice", [dep.mTSLA, crashed]);
+  check(await read<boolean>(vault, "liquidatable", [borrower.address, dep.mTSLA]), "liquidatable after the crash");
 
-const liqUsdc = await balance(usdc, liquidator.address);
-const liqShares = await balance(tsla, liquidator.address);
-const borrowerShares = await balance(tsla, borrower.address);
-const liq = await liquidator.send("liquidate", vault, "liquidate", [borrower.address, dep.mTSLA]);
-const seizeValue = debt * 10500n;
-const wantSeized = (seizeValue * 10n ** 18n + crashed * 10000n - 1n) / (crashed * 10000n);
-const ev = liq.logs(vault, "Liquidated")[0];
-eq(ev.seized, wantSeized, "seized = debt plus 5% in collateral, rounded up");
-eq(ev.returned, collateral - wantSeized, "returned = collateral minus seized");
-eq(ev.debt, debt, "Liquidated.debt");
-eq(ev.liquidator, liquidator.address, "Liquidated.liquidator");
-eq((await balance(tsla, liquidator.address)) - liqShares, wantSeized, "liquidator received the seized shares");
-eq(liqUsdc - (await balance(usdc, liquidator.address)), debt, "liquidator paid the full debt");
-eq((await balance(tsla, borrower.address)) - borrowerShares, collateral - wantSeized, "borrower got the remainder back");
-eq(await position(borrower.address, dep.mTSLA), [0n, 0n, 0n, 0n], "position deleted");
-const after = await credit(borrower.address);
-eq(after, [-2n, 3, 1], "credit after liquidation (score 3 - 5, repaid 3, liquidated 1)");
-eq(await terms(borrower.address), [2500n, 150n, -2n], "terms after liquidation (ltv, fee, score)");
-const upd = liq.logs(vault, "CreditUpdated")[0];
-eq([upd.score, upd.ltvBps, upd.feeBps], [-2n, 2500n, 150n], "CreditUpdated after liquidation");
-
-await deployer.send("restore mTSLA price", vault, "setPrice", [dep.mTSLA, price]);
+  const liqUsdc = await balance(usdc, liquidator.address);
+  const liqShares = await balance(tsla, liquidator.address);
+  const borrowerShares = await balance(tsla, borrower.address);
+  const liq = await liquidator.send("liquidate", vault, "liquidate", [borrower.address, dep.mTSLA]);
+  const seizeValue = debt * 10500n;
+  const wantSeized = (seizeValue * 10n ** 18n + crashed * 10000n - 1n) / (crashed * 10000n);
+  const ev = liq.logs(vault, "Liquidated")[0];
+  eq(ev.seized, wantSeized, "seized = debt plus 5% in collateral, rounded up");
+  eq(ev.returned, collateral - wantSeized, "returned = collateral minus seized");
+  eq(ev.debt, debt, "Liquidated.debt");
+  eq(ev.liquidator, liquidator.address, "Liquidated.liquidator");
+  eq((await balance(tsla, liquidator.address)) - liqShares, wantSeized, "liquidator received the seized shares");
+  eq(liqUsdc - (await balance(usdc, liquidator.address)), debt, "liquidator paid the full debt");
+  eq((await balance(tsla, borrower.address)) - borrowerShares, collateral - wantSeized, "borrower got the remainder back");
+  eq(await position(borrower.address, dep.mTSLA), [0n, 0n, 0n, 0n], "position deleted");
+  const after = await credit(borrower.address);
+  eq(after, [-2n, 3, 1], "credit after liquidation (score 3 - 5, repaid 3, liquidated 1)");
+  eq(await terms(borrower.address), [2500n, 150n, -2n], "terms after liquidation (ltv, fee, score)");
+  const upd = liq.logs(vault, "CreditUpdated")[0];
+  eq([upd.score, upd.ltvBps, upd.feeBps], [-2n, 2500n, 150n], "CreditUpdated after liquidation");
+} finally {
+  await deployer.send("restore mTSLA price", vault, "setPrice", [dep.mTSLA, price]);
+}
 eq(await read(vault, "price", [dep.mTSLA]), price, "price restored");
 
 if (dep.mocks) {

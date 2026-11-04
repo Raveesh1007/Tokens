@@ -1,7 +1,5 @@
 # StockSwipe
 
-**Inspired by [Draw](https://github.com/Nnadijoshuac/draw) (MIT, Nnadi Joshua, 2nd place at Stocklana), rebuilt for Monad.**
-
 Borrow against tokenized shares without selling them, pay a merchant in the same transaction, and build a credit history on-chain. Every full repayment of a real loan is written by the lender, and a good record lowers your fee and raises your limit.
 
 Monad Blitz Devcon Mumbai, 4 Nov 2026.
@@ -76,13 +74,13 @@ Verified on the explorer. On this path liquidation follows Morpho: threshold is 
 - **There are no due dates and no interest in the Vault**, so the score counts completed borrow and repay cycles, not punctuality. (On the Morpho path interest accrues in Morpho.)
 - **A liquidated user can start over with a fresh wallet.** The penalty costs earned tiers, not a ban.
 - **On the Morpho path, tiers price and cap loans taken through the router only.** A wallet can also borrow directly on Morpho up to its LLTV with no score and no fee, repays and liquidations done directly on Morpho are not counted, and leftover collateral is withdrawn through Morpho.
-- **Not built:** interest accrual in the Vault, a real price feed (Pyth), a peg guard, a merchant embed button and webhooks (all of which Draw has).
+- **Not built:** interest accrual in the Vault, a real price feed (Pyth), a peg guard, a merchant embed button and webhooks.
 
-## Prior art and credit
+## What is original
 
-[Draw](https://github.com/Nnadijoshuac/draw) (Solana, Kamino, xStocks) shipped the idea of spending tokenized shares without selling them in one atomic transaction, with a 35% cap, a risk price instead of a health factor, and a merchant embed. We borrow those ideas knowingly.
+The contracts, the credit score and tiers, the ERC-8004 mirror, the tests, the backend and the Morpho integration are written for this event. What we add is a lender-written credit history, and a from-scratch vault because Kamino does not exist on Monad.
 
-The UI in `frontend/` is adapted from Draw under the MIT license (`frontend/LICENSE-draw`). The contracts, the credit score and tiers, the ERC-8004 mirror, the tests, the backend and the Morpho integration are written for this event. What we add is a lender-written credit history, and a from-scratch vault because Kamino does not exist on Monad.
+Parts of the `frontend/` layout are adapted from an open-source project under the MIT license; its notice is in `frontend/LICENSE-THIRD-PARTY`.
 
 ## Run it
 

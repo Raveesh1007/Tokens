@@ -3,7 +3,10 @@ src = "src"
 out = "out"
 libs = ["lib"]
 solc = "0.8.28"
-remappings = ["@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "morpho-blue/=lib/morpho-blue/",
+]
 fs_permissions = [{ access = "read-write", path = "./deployments" }]
 
 [rpc_endpoints]

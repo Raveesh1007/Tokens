@@ -19,7 +19,7 @@ contract Deploy is Script {
         );
 
         vm.startBroadcast();
-        Token usdc = new Token("Mock USDC", "mUSDC", 6, false);
+        Token usdc = new Token("Mock USDC", "mUSDC", 6, true);
         Vault vault = new Vault(usdc, minLoanAge);
         usdc.mint(address(vault), 10_000_000e6);
 

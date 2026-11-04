@@ -149,7 +149,10 @@ export async function chainAt(url: string) {
 
   async function fund(funder: Signer, to: Address, min = parseEther(isMonad ? "1" : "0.2")) {
     const bal = await pub.getBalance({ address: to });
-    if (bal < min) await funder.transfer("fund gas", to, min - bal);
+    if (bal >= min) return;
+    await funder.transfer("fund gas", to, min - bal);
+    // the node can lag a block behind its own receipt, and estimating gas from an unfunded view fails
+    while ((await pub.getBalance({ address: to })) < min) await sleep(200);
   }
 
   async function fresh(funder: Signer, tag: string, min?: bigint) {

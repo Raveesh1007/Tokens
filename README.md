@@ -47,7 +47,7 @@ All verified on the explorer. The ERC-8004 registries do not exist on Monad test
 
 ### 2. Morpho Blue credit router on Monad mainnet (chain 143)
 
-The same score and tiers on top of the real Morpho Blue. The router wraps one Morpho market (mock USDC against mock NVDA, LLTV 62.5%, AdaptiveCurveIrm) and uses the real ERC-8004 registries.
+The same score and tiers on top of the real Morpho Blue. The router wraps one Morpho market (mock USDC against mock NVDA, LLTV 62.5%, AdaptiveCurveIrm) and uses the real ERC-8004 registries. A live run registered agent 10423 on the real identity registry ([tx](https://monadscan.com/tx/0xfe3769db91c683ac00cabc3f4341303aafbbeb8ef29f9e22cf9e107dbb361cff)); after a full repay ([tx](https://monadscan.com/tx/0x1ffc06c92a12549729d6843832dab4784fe3070c1c2abee237d955740ae37b49)) the real reputation registry held one feedback from the router for that agent: +1, tag `credit`, tag `repay`.
 
 | Contract | Address |
 | --- | --- |
@@ -66,7 +66,7 @@ Verified on the explorer. On this path liquidation follows Morpho: threshold is 
 - `forge test` runs 28 Vault tests offline, including a fuzz test that no successful `pay` exceeds the tier limit.
 - 30 fork tests run against the real Morpho and the real ERC-8004 registries on a mainnet fork. One suite registers a real agent and checks that a counted repay and a liquidation land in the real reputation registry.
 - `backend/e2e.ts` passes 75 checks on the testnet deployment: three counted loans, the tier change to 40%/0.5%, a liquidation, and the registry mirror.
-- `backend/e2e-morpho.ts` passes 28 checks on the mainnet deployment: a merchant payment through the router and a full repay by shares, ending at score 1.
+- `backend/e2e-morpho.ts` passes 28 checks on the mainnet deployment: a merchant payment through the router and a full repay by shares, ending at score 1. With `REGISTER_AGENT=1` it passes 35, adding the real agent registration and the read-back of the feedback from the real reputation registry.
 - `pay`, `repay`, `withdraw` and `liquidate` are reentrancy-guarded, and internal audit passes on both the Vault and the Morpho router found no High issues.
 
 ## What is mocked, and the honest limits

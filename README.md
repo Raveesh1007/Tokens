@@ -1,4 +1,4 @@
-# Standing
+# StockSwipe
 
 **Inspired by [Draw](https://github.com/Nnadijoshuac/draw) (MIT, Nnadi Joshua, 2nd place at Stocklana), rebuilt for Monad.**
 
@@ -6,7 +6,7 @@ Borrow against tokenized shares without selling them, pay a merchant in the same
 
 Monad Blitz Devcon Mumbai, 4 Nov 2026.
 
-- Live app: pending (frontend in `frontend/`, being wired to the v2 contracts)
+- Live app: https://stockswipe.site (frontend in `frontend/`, Next.js on Vercel, wired to the testnet Vault below)
 - Repo: https://github.com/Raveesh1007/Tokens
 
 ## What it does
@@ -29,7 +29,7 @@ Optionally a borrower links an ERC-8004 agent identity, and the contract mirrors
 
 ## Two deployments
 
-### 1. Standing Vault on Monad testnet (chain 10143), the demo path
+### 1. StockSwipe Vault on Monad testnet (chain 10143), the demo path
 
 A from-scratch lending vault. Liquidation threshold 65% for everyone, liquidator gets the debt plus 5% in collateral and the borrower gets the rest back. Demo `minLoanAge` is **10 seconds**; a real deployment would use days.
 

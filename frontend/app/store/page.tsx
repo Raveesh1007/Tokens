@@ -9,9 +9,9 @@ import { explorerTx } from "@/lib/wallet";
 
 const SHOP = "Bandra Chai Co.";
 const ITEMS = [
-  { name: "Masala chai × 2", price: "5", note: "With a side of Parle-G" },
-  { name: "Vada pav combo", price: "3", note: "Two pav, extra chutney" },
-  { name: "Filter coffee", price: "2", note: "Madras style, steel tumbler" },
+  { name: "Chai party pack", price: "12", note: "Eight cups, with Parle-G" },
+  { name: "Vada pav feast", price: "10", note: "Six pav, extra chutney" },
+  { name: "Filter coffee beans", price: "15", note: "Madras roast, 500 g" },
 ];
 
 export default function StorePage() {

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { isAddress, maxUint256, parseUnits, stringToHex, type Address } from "viem";
 
-import { STOCKS, VAULT, collateralNeeded, deployed, tokenAbi, vaultAbi } from "@/lib/contracts";
+import { MIN_LOAN_USDC, STOCKS, VAULT, collateralNeeded, tokenAbi, vaultAbi } from "@/lib/contracts";
 import { formatShares, formatUsd } from "@/lib/format";
 import { errorMessage, explorerTx, publicClient, shortAddress, useWallet } from "@/lib/wallet";
 
@@ -39,25 +39,35 @@ function Checkout() {
   const back = params.get("back");
 
   const [options, setOptions] = useState<Option[] | null>(null);
+  const [terms, setTerms] = useState<{ ltv: bigint; fee: bigint; score: bigint } | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("ready");
   const [hash, setHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!wallet.address || !amount || !deployed) return;
+    if (!wallet.address || !amount) return;
     const user = wallet.address;
-    void Promise.all(
-      STOCKS.map(async (s) => {
-        const [bal, pos, price] = await Promise.all([
-          publicClient.readContract({ address: s.address, abi: tokenAbi, functionName: "balanceOf", args: [user] }),
-          publicClient.readContract({ address: VAULT, abi: vaultAbi, functionName: "positions", args: [user, s.address] }),
-          publicClient.readContract({ address: VAULT, abi: vaultAbi, functionName: "price", args: [s.address] }),
-        ]);
-        return { symbol: s.symbol, address: s.address, price, wallet: bal, need: collateralNeeded(price, pos[0], pos[1], amount) };
-      }),
-    )
-      .then((rows) => {
+    void publicClient
+      .readContract({ address: VAULT, abi: vaultAbi, functionName: "terms", args: [user] })
+      .then(async ([ltv, feeBps, score]) => {
+        setTerms({ ltv, fee: feeBps, score });
+        const rows = await Promise.all(
+          STOCKS.map(async (s) => {
+            const [bal, pos, price] = await Promise.all([
+              publicClient.readContract({ address: s.address, abi: tokenAbi, functionName: "balanceOf", args: [user] }),
+              publicClient.readContract({ address: VAULT, abi: vaultAbi, functionName: "positions", args: [user, s.address] }),
+              publicClient.readContract({ address: VAULT, abi: vaultAbi, functionName: "price", args: [s.address] }),
+            ]);
+            return {
+              symbol: s.symbol,
+              address: s.address,
+              price,
+              wallet: bal,
+              need: collateralNeeded(price, pos[0], pos[1], amount, ltv),
+            };
+          }),
+        );
         setOptions(rows);
         setChosen((c) => c ?? rows.find((r) => r.price > 0n && r.wallet >= r.need)?.symbol ?? rows[0]?.symbol ?? null);
       })
@@ -66,7 +76,8 @@ function Checkout() {
 
   const option = options?.find((o) => o.symbol === chosen) ?? null;
   const enough = !!option && option.price > 0n && option.wallet >= option.need;
-  const fee = to && to.toLowerCase() !== wallet.address?.toLowerCase() ? amount / 100n : 0n;
+  const fee = terms ? (amount * terms.fee) / 10_000n : 0n;
+  const counts = amount >= MIN_LOAN_USDC;
 
   const pay = useCallback(async () => {
     if (!option || !wallet.address) return;
@@ -103,7 +114,6 @@ function Checkout() {
   const destination = merchant ? `Paying ${merchant}` : to ? `Paying ${shortAddress(to)}` : "Borrowing to your wallet";
 
   if (!amount) return <Shell><Centered>There is no amount to pay.</Centered></Shell>;
-  if (!deployed) return <Shell><Centered>The contracts aren&apos;t deployed yet.</Centered></Shell>;
 
   if (!wallet.address) {
     return (
@@ -137,9 +147,13 @@ function Checkout() {
           </p>
           <div className="mt-7 rounded-[var(--radius-card)] bg-[var(--color-surface)] p-4">
             <Row label="Borrowed" value={formatUsd(amount)} />
-            {fee > 0n && <Row label="Shop received" value={formatUsd(amount - fee)} />}
+            <Row label="Fee" value={formatUsd(fee)} />
+            <Row label="Received" value={formatUsd(amount - fee)} />
             <p className="mt-3.5 border-t border-[var(--color-line)] pt-3.5 text-[13px] leading-relaxed text-[var(--color-muted)]">
               You owe {formatUsd(amount)}. Repay it and the {option.symbol} comes back to you.
+              {counts
+                ? " Repaying in full after the minimum loan age adds +1 to your credit score."
+                : " Loans under $10 don't count toward your credit score."}
             </p>
           </div>
           {hash && (
@@ -200,7 +214,9 @@ function Checkout() {
                   <Row label="Locked as security" value={`${formatShares(option.need)} ${option.symbol}`} />
                   <Row label="You hold" value={`${formatShares(option.wallet)} ${option.symbol}`} />
                   <Row label="Share price" value={formatUsd(option.price)} />
-                  {fee > 0n && <Row label="Shop receives" value={formatUsd(amount - fee)} />}
+                  {terms && <Row label="Your limit" value={`${Number(terms.ltv) / 100}% of collateral`} />}
+                  <Row label="Fee" value={`${formatUsd(fee)} (${Number(terms?.fee ?? 0n) / 100}%)`} />
+                  <Row label="Recipient gets" value={formatUsd(amount - fee)} />
                   <p className="mt-4 border-t border-[var(--color-line)] pt-4 text-[13px] leading-relaxed text-[var(--color-muted)]">
                     Your shares are held, not sold. Repay the {formatUsd(amount)} any time to unlock them.
                   </p>

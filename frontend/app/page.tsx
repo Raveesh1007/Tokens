@@ -69,7 +69,7 @@ function Mechanism() {
     {
       n: "02",
       title: "StockSwipe prices it against your shares",
-      text: "The vault's price feed decides how many shares a $5 payment needs at 35% loan-to-value.",
+      text: "The vault prices your shares and works out how many a payment needs, based on your credit score: 35% loan-to-value to start, up to 45% as you repay.",
     },
     {
       n: "03",
@@ -126,7 +126,7 @@ function WhyMonad() {
           <dl className="space-y-5">
             {[
               ["About a second to final", "Fast enough to stand at a counter and wait for it."],
-              ["Gas measured in fractions of a cent", "A $5 payment can afford its own transaction fee."],
+              ["Gas measured in fractions of a cent", "A $10 payment can afford its own transaction fee."],
               ["Open at 3am on a Sunday", "Tokenized stocks trade when the stock market is shut."],
               ["No credit file required", "The collateral is the underwriting, so there is nothing to score."],
             ].map(([term, def]) => (
@@ -207,8 +207,8 @@ function Proof() {
       <div className="mt-9 grid gap-px overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-line)] bg-[var(--color-line)] sm:grid-cols-3">
         {[
           ["1", "transaction to lock, borrow and pay"],
-          ["35%", "maximum loan-to-value"],
-          ["65%", "liquidation threshold, your safety margin"],
+          ["+1", "credit score for every loan you repay in full"],
+          ["45%", "maximum loan-to-value at a top score, with a 0% fee"],
         ].map(([figure, caption]) => (
           <div key={caption} className="bg-[var(--color-white)] p-6">
             <p className="tabular text-[34px] font-semibold tracking-[-0.03em] text-[var(--color-accent)]" style={{ fontFamily: "var(--font-display)" }}>
@@ -221,7 +221,7 @@ function Proof() {
 
       <p className="mt-6 text-[14px] leading-relaxed text-[var(--color-muted)]">
         The cap is deliberate. Tokenized stocks trade 24/7 but the underlying market does not, so a position opened on
-        Saturday can gap at Monday&apos;s open. The gap between 35% and 65% is your margin.
+        Saturday can gap at Monday&apos;s open. The gap between your limit and the 65% liquidation line is your margin.
       </p>
     </Section>
   );

@@ -1,7 +1,7 @@
 const LEGS = [
-  { step: "Lock", detail: "0.07 NVDAx moves into the StockSwipe vault", note: "still yours" },
-  { step: "Borrow", detail: "$5 of USDC is drawn against it", note: "at 35% loan-to-value" },
-  { step: "Pay", detail: "$4.95 settles to the shop, the 1% fee stays in the vault", note: "in about a second" },
+  { step: "Lock", detail: "0.143 NVDAx moves into the StockSwipe vault", note: "still yours" },
+  { step: "Borrow", detail: "$10 of USDC is drawn against it", note: "at 35% loan-to-value for a new wallet" },
+  { step: "Pay", detail: "$9.90 settles to the shop, the 1% fee stays in the vault", note: "in about a second" },
 ];
 
 export function TransactionDiagram() {

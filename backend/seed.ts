@@ -1,5 +1,5 @@
 import { formatUnits, parseUnits, type Hex } from "viem";
-import { connect, need } from "./lib";
+import { connect, fail, need, victimWallet } from "./lib";
 
 const c = await connect();
 const { dep, vault, usdc, read, borrow, waitAge } = c;
@@ -18,7 +18,8 @@ if ((await balance(demo.address)) < mUSDC(500)) {
 }
 await c.approve(demo, usdc);
 
-while ((await credit(demo.address))[0] < 3n) {
+// score 2 so the live repay on stage takes the wallet from 3500/100 to 4000/50
+while ((await credit(demo.address))[0] < 2n) {
   if ((await debtOf(demo.address, dep.mNVDA)) > 0n) {
     const left = await debtOf(demo.address, dep.mNVDA);
     await demo.send("repay open loan", vault, "repay", [dep.mNVDA, left]);
@@ -35,21 +36,10 @@ if ((await debtOf(demo.address, dep.mNVDA)) === 0n) {
   await borrow(demo, dep.mNVDA, mUSDC(50), merchant, "seed-open");
 }
 const [ltv, fee, score] = await read<bigint[]>(vault, "terms", [demo.address]);
+if (score !== 2n) fail(`demo wallet is at score ${score}, the demo needs score 2, use a fresh BORROWER_KEY wallet`);
 console.log(`demo: score ${score}, limit ${Number(ltv) / 100}%, fee ${Number(fee) / 100}%, open loan of 50 mUSDC on mNVDA to repay live`);
 
-// victim wallets are derived too: reuse one with an open position, else take the first unused one
-async function victimWallet() {
-  for (let i = 0; ; i++) {
-    const v = c.derive(demo, "victim", i);
-    if ((await debtOf(v.address, dep.mTSLA)) > 0n) return v;
-    if ((await c.pub.getTransactionCount({ address: v.address })) === 0) {
-      await c.fund(demo, v.address);
-      await borrow(v, dep.mTSLA, mUSDC(100), merchant, "seed-victim");
-      return v;
-    }
-  }
-}
-const victim = await victimWallet();
+const victim = (await victimWallet(c, demo, merchant, true))!;
 const [collateral, debt] = await read<bigint[]>(vault, "positions", [victim.address, dep.mTSLA]);
 const liqBps = await read<bigint>(vault, "LIQ_BPS");
 const threshold = (debt * 10000n * 10n ** 18n) / (collateral * liqBps);

@@ -4,3 +4,8 @@ out = "out"
 libs = ["lib"]
 solc = "0.8.28"
 remappings = ["@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"]
+fs_permissions = [{ access = "read-write", path = "./deployments" }]
+
+[rpc_endpoints]
+monad_testnet = "https://testnet-rpc.monad.xyz"
+monad = "https://rpc.monad.xyz"

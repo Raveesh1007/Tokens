@@ -10,6 +10,7 @@ import {
   keccak256,
   maxUint256,
   parseEther,
+  parseUnits,
   parseEventLogs,
   stringToHex,
   type Abi,
@@ -213,4 +214,21 @@ export async function connect() {
   }
 
   return { ...c, approve, dep, vault, usdc, identity, reputation, borrow, waitAge };
+}
+
+export type Standing = Awaited<ReturnType<typeof connect>>;
+
+// first derived wallet with an open mTSLA position, else the first unused one (opened only when `open`)
+export async function victimWallet(c: Standing, demo: Signer, merchant: Address, open: boolean) {
+  for (let i = 0; ; i++) {
+    const v = c.derive(demo, "victim", i);
+    const [, debt] = await c.read<bigint[]>(c.vault, "positions", [v.address, c.dep.mTSLA]);
+    if (debt > 0n) return v;
+    if ((await c.pub.getTransactionCount({ address: v.address })) === 0) {
+      if (!open) return undefined;
+      await c.fund(demo, v.address);
+      await c.borrow(v, c.dep.mTSLA, parseUnits("100", 6), merchant, "seed-victim");
+      return v;
+    }
+  }
 }

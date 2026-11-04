@@ -256,16 +256,7 @@ function Footer() {
           <Wordmark />
           <p>Spend your stocks without selling them.</p>
         </div>
-        <div className="space-y-3 sm:text-right">
-          <BuiltOnMonad />
-          <p>
-            Design adapted from{" "}
-            <a href="https://github.com/Nnadijoshuac/draw" className="underline hover:text-white">
-              Draw
-            </a>{" "}
-            (MIT)
-          </p>
-        </div>
+        <BuiltOnMonad />
       </div>
     </footer>
   );

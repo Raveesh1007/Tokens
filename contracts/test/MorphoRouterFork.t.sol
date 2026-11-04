@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IMorpho, MarketParams, Id, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "morpho-blue/src/libraries/MarketParamsLib.sol";
 import {Token} from "../src/Token.sol";
@@ -15,7 +16,20 @@ import {MockReputationRegistry} from "../src/mocks/MockReputationRegistry.sol";
 contract MorphoRouterFork is Test {
     using MarketParamsLib for MarketParams;
 
+    event Paid(
+        address indexed user,
+        address indexed to,
+        address indexed stock,
+        uint256 amount,
+        uint256 fee,
+        uint256 collateralIn,
+        bytes32 ref
+    );
     event Repaid(address indexed user, address indexed stock, uint256 amount, bool counted);
+    event Liquidated(
+        address indexed user, address indexed stock, address liquidator, uint256 debt, uint256 seized, uint256 returned
+    );
+    event CreditUpdated(address indexed user, int256 score, uint256 ltvBps, uint256 feeBps);
     event MirrorFailed(address indexed user);
 
     IMorpho constant MORPHO = IMorpho(0xD5D960E8C380B724a48AC59E2DfF1b2CB4a1eAee);
@@ -87,18 +101,33 @@ contract MorphoRouterFork is Test {
         (score,,) = router.credit(who);
     }
 
-    function _repay(uint256 amount) internal returns (bool counted) {
+    function _log(Vm.Log[] memory logs, bytes32 sig) internal view returns (bool found, Vm.Log memory l) {
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter == address(router) && logs[i].topics[0] == sig) return (true, logs[i]);
+        }
+    }
+
+    function _repayLogs(uint256 amount) internal returns (Vm.Log[] memory) {
         vm.recordLogs();
         vm.prank(alice);
         router.repay(amount);
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        for (uint256 i; i < logs.length; i++) {
-            if (logs[i].emitter == address(router) && logs[i].topics[0] == Repaid.selector) {
-                (, counted) = abi.decode(logs[i].data, (uint256, bool));
-                return counted;
-            }
-        }
-        revert("no Repaid event");
+        return vm.getRecordedLogs();
+    }
+
+    function _repay(uint256 amount) internal returns (bool counted) {
+        (bool found, Vm.Log memory l) = _log(_repayLogs(amount), Repaid.selector);
+        require(found, "no Repaid event");
+        (, counted) = abi.decode(l.data, (uint256, bool));
+    }
+
+    function _liquidate() internal {
+        vm.prank(liq);
+        router.liquidate(alice);
+    }
+
+    function _assertRouterHolds(uint256 fees) internal view {
+        assertEq(nvda.balanceOf(address(router)), 0);
+        assertEq(usdc.balanceOf(address(router)), fees);
     }
 
     function _ageThenRepayAll() internal returns (bool) {
@@ -125,8 +154,6 @@ contract MorphoRouterFork is Test {
         return debt * lif / 1e18 * 1e18 / price;
     }
 
-    // pay
-
     function test_payBorrowsAtBaseTermsAndPaysShopNetOfFee() public {
         _pay(10e18, 700e6);
 
@@ -149,14 +176,14 @@ contract MorphoRouterFork is Test {
         router.pay(10e18, 100e6, shop, REF);
     }
 
-    // repay
-
     function test_fullRepayClearsDebtAndCounts() public {
         _pay(10e18, 700e6);
         vm.warp(block.timestamp + MIN_AGE + 1);
         uint256 before = usdc.balanceOf(alice);
         uint256 routerBefore = usdc.balanceOf(address(router));
 
+        vm.expectEmit(true, false, false, true, address(router));
+        emit CreditUpdated(alice, 1, 3500, 100);
         assertTrue(_repay(type(uint256).max));
 
         assertEq(_pos(alice).borrowShares, 0);
@@ -204,8 +231,9 @@ contract MorphoRouterFork is Test {
         _pay(10e18, 700e6);
         vm.warp(block.timestamp + MIN_AGE - 1);
 
-        assertFalse(_repay(type(uint256).max));
+        (bool found,) = _log(_repayLogs(type(uint256).max), CreditUpdated.selector);
 
+        assertFalse(found);
         assertEq(_pos(alice).borrowShares, 0);
         assertEq(_score(alice), 0);
     }
@@ -274,8 +302,9 @@ contract MorphoRouterFork is Test {
         oracle.setPrice(price);
         _fund(liq, 1_000e6);
 
-        vm.prank(liq);
-        router.liquidate(alice);
+        vm.expectEmit(true, false, false, true, address(router));
+        emit CreditUpdated(alice, -5, 2500, 150);
+        _liquidate();
 
         assertApproxEqAbs(1_000e6 - usdc.balanceOf(liq), 700e6, 10);
         assertApproxEqRel(nvda.balanceOf(liq), _expectedSeized(700e6, price), 1e12);
@@ -293,9 +322,8 @@ contract MorphoRouterFork is Test {
         _pay(10e18, 700e6);
         _fund(liq, 1_000e6);
 
-        vm.prank(liq);
         vm.expectRevert(bytes("position is healthy"));
-        router.liquidate(alice);
+        _liquidate();
 
         assertEq(_score(alice), 0);
         assertGt(_pos(alice).borrowShares, 0);
@@ -343,8 +371,7 @@ contract MorphoRouterFork is Test {
         oracle.setPrice(_crashPrice());
         _fund(liq, 1_000e6);
 
-        vm.prank(liq);
-        router.liquidate(alice);
+        _liquidate();
 
         assertEq(rep.feedbackCount(), 1);
         (uint256 agentId, int128 value,, string memory tag1, string memory tag2) = rep.feedbacks(0);
@@ -378,10 +405,93 @@ contract MorphoRouterFork is Test {
 
         vm.expectEmit(true, false, false, false, address(router));
         emit MirrorFailed(alice);
-        vm.prank(liq);
-        router.liquidate(alice);
+        _liquidate();
 
         assertEq(_score(alice), -5);
         assertEq(rep.feedbackCount(), 0);
+    }
+
+    function test_payEmitsPaidForMerchant() public {
+        vm.expectEmit(true, true, true, true, address(router));
+        emit Paid(alice, shop, address(nvda), 700e6, 7e6, 10e18, REF);
+        _pay(10e18, 700e6);
+    }
+
+    function test_selfDrawEmitsPaidAndChargesFee() public {
+        uint256 before = usdc.balanceOf(alice);
+
+        vm.expectEmit(true, true, true, true, address(router));
+        emit Paid(alice, alice, address(nvda), 100e6, 1e6, 10e18, REF);
+        vm.prank(alice);
+        router.pay(10e18, 100e6, alice, REF);
+
+        assertEq(usdc.balanceOf(alice) - before, 99e6);
+    }
+
+    function test_liquidatedEventCarriesDebtAndSeized() public {
+        _pay(10e18, 700e6);
+        oracle.setPrice(_crashPrice());
+        _fund(liq, 1_000e6);
+
+        vm.recordLogs();
+        _liquidate();
+        (bool found, Vm.Log memory l) = _log(vm.getRecordedLogs(), Liquidated.selector);
+
+        assertTrue(found);
+        assertEq(address(uint160(uint256(l.topics[1]))), alice);
+        assertEq(address(uint160(uint256(l.topics[2]))), address(nvda));
+        (address liquidator, uint256 debt, uint256 seized, uint256 returned) =
+            abi.decode(l.data, (address, uint256, uint256, uint256));
+        assertEq(liquidator, liq);
+        assertApproxEqAbs(debt, 700e6, 10);
+        assertEq(debt, 1_000e6 - usdc.balanceOf(liq));
+        assertEq(seized, nvda.balanceOf(liq));
+        assertEq(returned, 0);
+    }
+
+    function test_sweepSendsTheFeeToTheTarget() public {
+        _pay(10e18, 700e6);
+        assertEq(usdc.balanceOf(address(router)), 7e6);
+
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, bob));
+        router.sweep(bob);
+
+        address treasury = address(0x7EA);
+        router.sweep(treasury);
+
+        assertEq(usdc.balanceOf(treasury), 7e6);
+        assertEq(usdc.balanceOf(address(router)), 0);
+    }
+
+    function test_underwaterLiquidationStillSucceeds() public {
+        _pay(10e18, 700e6);
+        oracle.setPrice(60e6);
+        _fund(liq, 1_000e6);
+
+        _liquidate();
+
+        assertEq(nvda.balanceOf(liq), 10e18);
+        assertLe(1_000e6 - usdc.balanceOf(liq), 600e6);
+        _assertRouterHolds(7e6);
+        assertEq(_pos(alice).borrowShares, 0);
+        assertEq(_pos(alice).collateral, 0);
+        assertEq(_score(alice), -5);
+    }
+
+    function test_routerHoldsOnlyTheFeeThroughPayRepayLiquidate() public {
+        _pay(10e18, 700e6);
+        _assertRouterHolds(7e6);
+
+        _ageThenRepayAll();
+        _assertRouterHolds(7e6);
+
+        _pay(0, 700e6);
+        _assertRouterHolds(14e6);
+
+        oracle.setPrice(_crashPrice());
+        _fund(liq, 1_000e6);
+        _liquidate();
+        _assertRouterHolds(14e6);
     }
 }
